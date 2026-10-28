@@ -6,6 +6,109 @@
 #include "TestDssC.h"
 
 
+//  Write a regular interval pattern record whose internal header holds only
+//  numberInts ints (as other writers may produce), bypassing ztsStore().
+static int writePatternRecord(long long *ifltab, const char *pathname, float *values,
+							  int numberValues, int *internalHeader, int numberInts)
+{
+	zStructTransfer* ztransfer;
+	int status;
+
+	ztransfer = zstructTransferNew(pathname, 0);
+	if (!ztransfer) return -1;
+	ztransfer->dataType = DATA_TYPE_RTS_PATTERN;
+	ztransfer->numberValues = numberValues;
+	ztransfer->values1 = (int *)values;
+	ztransfer->values1Number = numberValues;
+	ztransfer->internalHeader = internalHeader;
+	ztransfer->internalHeaderNumber = numberInts;
+	status = zwrite(ifltab, ztransfer);
+	zstructFree(ztransfer);
+	return status;
+}
+
+
+//  A pattern record with an internal header too short to hold the time offset
+//  (fewer than INT_HEAD_timeOffset + 1 ints) must read as if the offset were zero,
+//  not pick up whatever follows the header in memory.
+//  The time offset of a header long enough to hold it is still applied.
+int testTimeSeriesPatternShortHeader(long long *ifltab)
+{
+	zStructTimeSeries *tss;
+	float fvalues[24];
+	int internalHeader[4];  //  Whole 64-bit words; heclib stores headers on 8-byte boundaries
+	int startJulian;
+	int startSeconds;
+	int numberInts;
+	int i;
+	int status;
+	char path[100];
+
+	for (i = 0; i < 24; i++) {
+		fvalues[i] = (float)i;
+	}
+
+	//  Reference: the same pattern stored normally, with a zero offset
+	tss = zstructTsNewRegFloats("/Basin/Location/Flow/TS-Pattern/15Minute/Full Header/", fvalues, 24, "21Jan2001", "1200", "cfs", "Inst-Val");
+	tss->startJulianDate = UNDEFINED_TIME;
+	tss->startTimeSeconds = -1;
+	tss->dataType = DATA_TYPE_RTS_PATTERN;
+	status = ztsStore(ifltab, tss, 0);
+	zstructFree(tss);
+	if (zcheckStatus(ifltab, status, 1, "Fail in testTimeSeriesPatternShortHeader Loc 1, store status ")) return status;
+
+	tss = zstructTsNew("/Basin/Location/Flow/TS-Pattern/15Minute/Full Header/");
+	status = ztsRetrieve(ifltab, tss, 0, 1, 0);
+	if (zcheckStatus(ifltab, status, 1, "Fail in testTimeSeriesPatternShortHeader Loc 2, retrieve status ")) return status;
+	startJulian = tss->startJulianDate;
+	startSeconds = tss->startTimeSeconds;
+	zstructFree(tss);
+
+	//  Headers of 1 and 2 ints have no time offset word
+	for (numberInts = 1; numberInts <= INT_HEAD_timeOffset; numberInts++) {
+		for (i = 0; i < 4; i++) {
+			internalHeader[i] = 0;
+		}
+		snprintf(path, sizeof(path), "/Basin/Location/Flow/TS-Pattern/15Minute/Header %d/", numberInts);
+		status = writePatternRecord(ifltab, path, fvalues, 24, internalHeader, numberInts);
+		if (zcheckStatus(ifltab, status, 1, "Fail in testTimeSeriesPatternShortHeader Loc 10, write status ")) return status;
+
+		tss = zstructTsNew(path);
+		status = ztsRetrieve(ifltab, tss, 0, 1, 0);
+		if (zcheckStatus(ifltab, status, 1, "Fail in testTimeSeriesPatternShortHeader Loc 11, retrieve status ")) return status;
+		if ((tss->numberValues != 24) || (tss->timeOffsetSeconds != 0) ||
+			(tss->startJulianDate != startJulian) || (tss->startTimeSeconds != startSeconds)) {
+			printf("Fail in testTimeSeriesPatternShortHeader Loc 12, %d int header: numberValues %d, timeOffsetSeconds %d, start %d %d, expected 24, 0, %d %d\n",
+				numberInts, tss->numberValues, tss->timeOffsetSeconds, tss->startJulianDate, tss->startTimeSeconds,
+				startJulian, startSeconds);
+			zstructFree(tss);
+			return -1;
+		}
+		zstructFree(tss);
+	}
+
+	//  A 3 int header holds the time offset, which is applied
+	for (i = 0; i < 4; i++) {
+		internalHeader[i] = 0;
+	}
+	internalHeader[INT_HEAD_timeOffset] = 180;
+	status = writePatternRecord(ifltab, "/Basin/Location/Flow/TS-Pattern/15Minute/Header 3/", fvalues, 24, internalHeader, INT_HEAD_timeOffset + 1);
+	if (zcheckStatus(ifltab, status, 1, "Fail in testTimeSeriesPatternShortHeader Loc 20, write status ")) return status;
+
+	tss = zstructTsNew("/Basin/Location/Flow/TS-Pattern/15Minute/Header 3/");
+	status = ztsRetrieve(ifltab, tss, 0, 1, 0);
+	if (zcheckStatus(ifltab, status, 1, "Fail in testTimeSeriesPatternShortHeader Loc 21, retrieve status ")) return status;
+	if (tss->timeOffsetSeconds != 180) {
+		printf("Fail in testTimeSeriesPatternShortHeader Loc 22, timeOffsetSeconds %d, expected 180\n", tss->timeOffsetSeconds);
+		zstructFree(tss);
+		return -1;
+	}
+	zstructFree(tss);
+
+	return 0;
+}
+
+
 	//  Regular interval floats, basic
 
 int testTimeSeriesPattern(long long *ifltab)
@@ -105,6 +208,8 @@ int testTimeSeriesPattern(long long *ifltab)
 		zstructFree(tss1);
 		zstructFree(tss2);
 
+		status = testTimeSeriesPatternShortHeader(ifltab);
+		if (status) return status;
 	}
 
 

@@ -27,6 +27,7 @@ int testztsStruct14(long long *ifltab);
 int testztsStruct15(long long *ifltab);
 int testTimeSeries5(long long *ifltab);
 int testTimeSeriesPattern(long long *ifltab);
+int testTimeSeriesPatternShortHeader(long long *ifltab);
 int testPairedData(long long *ifltab);
 int TestPairedData2(long long *ifltab);
 int TestPairedData3(long long *ifltab);

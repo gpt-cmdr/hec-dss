@@ -83,8 +83,11 @@ int ztsInternalHeaderUnpack(zStructTimeSeries *tss, int *internalHeader, int int
 		tss->timeGranularitySeconds = internalHeader[INT_HEAD_timeGranularity];
 	}
 	tss->precision = internalHeader[INT_HEAD_precision];
-	tss->timeOffsetSeconds = internalHeader[INT_HEAD_timeOffset];
-	tss->timeWindow->timeOffsetSeconds = internalHeader[INT_HEAD_timeOffset];
+	//  A header too short to hold the time offset has none stored; leave it as is
+	if (internalHeaderNumber > INT_HEAD_timeOffset) {
+		tss->timeOffsetSeconds = internalHeader[INT_HEAD_timeOffset];
+		tss->timeWindow->timeOffsetSeconds = internalHeader[INT_HEAD_timeOffset];
+	}
 
 	len = internalHeaderNumber - INT_HEAD_units;
 	//  Do we have any units or type?  (which is okay)

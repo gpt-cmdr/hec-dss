@@ -32,9 +32,13 @@ static int writePatternRecord(long long *ifltab, const char *pathname, float *va
 //  (fewer than INT_HEAD_timeOffset + 1 ints) must read as if the offset were zero,
 //  not pick up whatever follows the header in memory.
 //  The time offset of a header long enough to hold it is still applied.
+//  ztsGetSizes() on a regular interval block with a short header reports zeros
+//  for the slots that are not stored.
 int testTimeSeriesPatternShortHeader(long long *ifltab)
 {
 	zStructTimeSeries *tss;
+	zStructRecordSize *recordSize;
+	zStructTransfer* ztransfer;
 	float fvalues[24];
 	int internalHeader[4];  //  Whole 64-bit words; heclib stores headers on 8-byte boundaries
 	int startJulian;
@@ -104,6 +108,43 @@ int testTimeSeriesPatternShortHeader(long long *ifltab)
 		return -1;
 	}
 	zstructFree(tss);
+
+	//  Sizes for a regular interval block whose internal header holds only 2 ints:
+	//  slots past the stored header must read as zero, not stack contents.
+	for (i = 0; i < 4; i++) {
+		internalHeader[i] = 0;
+	}
+	ztransfer = zstructTransferNew("/Basin/Location/Flow/01Jan2001/1Hour/Short Header/", 0);
+	if (!ztransfer) return -1;
+	ztransfer->dataType = DATA_TYPE_RTS;
+	ztransfer->numberValues = 24;
+	ztransfer->values1 = (int *)fvalues;
+	ztransfer->values1Number = 24;
+	ztransfer->internalHeader = internalHeader;
+	ztransfer->internalHeaderNumber = 2;
+	status = zwrite(ifltab, ztransfer);
+	zstructFree(ztransfer);
+	if (zcheckStatus(ifltab, status, 1, "Fail in testTimeSeriesPatternShortHeader Loc 30, write status ")) return status;
+
+	tss = zstructTsNewTimes("/Basin/Location/Flow//1Hour/Short Header/", "01Jan2001", "0100", "02Jan2001", "0000");
+	recordSize = zstructRecordSizeNew("/Basin/Location/Flow//1Hour/Short Header/");
+	ztsProcessTimes(ifltab, tss, 0);
+	status = ztsGetSizes(ifltab, tss, recordSize);
+	if (zcheckStatus(ifltab, status, 1, "Fail in testTimeSeriesPatternShortHeader Loc 31, ztsGetSizes status ")) return status;
+	if ((recordSize->tsTimeOffset != 0) || (recordSize->tsProfileDepthsNumber != 0) ||
+		(recordSize->tsBlockStartPosition != 0) || (recordSize->tsBlockEndPosition != 0) ||
+		(recordSize->tsValueSize != 0) || (recordSize->tsValueElementSize != 0) ||
+		(recordSize->tsCnotesLength != 0)) {
+		printf("Fail in testTimeSeriesPatternShortHeader Loc 32, sizes from a 2 int header: timeOffset %d, profileDepths %d, blockStart %d, blockEnd %d, valueSize %d, valueElementSize %d, cnotesLength %d; expected all 0\n",
+			recordSize->tsTimeOffset, recordSize->tsProfileDepthsNumber, recordSize->tsBlockStartPosition,
+			recordSize->tsBlockEndPosition, recordSize->tsValueSize, recordSize->tsValueElementSize,
+			recordSize->tsCnotesLength);
+		zstructFree(tss);
+		zstructFree(recordSize);
+		return -1;
+	}
+	zstructFree(tss);
+	zstructFree(recordSize);
 
 	return 0;
 }

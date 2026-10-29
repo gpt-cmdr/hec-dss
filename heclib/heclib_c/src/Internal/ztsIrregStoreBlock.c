@@ -372,6 +372,8 @@ int ztsIrregStoreBlock(long long *ifltab, zStructTimeSeries *tss, const char *pa
 			//  Now read internal header array
 			lengthInternalHeaderRead = (int)info[zdssInfoKeys.kinfoInternalHeadNumber];
 			if (lengthInternalHeaderRead > sizeInternalHeaderRead) lengthInternalHeaderRead = sizeInternalHeaderRead;
+			//  Slots past the stored header read as zero
+			memset(internalHeaderRead, 0, sizeof(internalHeaderRead));
 			status = zget(ifltab, info[zdssInfoKeys.kinfoInternalHeadAddress],
 				internalHeaderRead, lengthInternalHeaderRead, 1);
 			if (zisError(status)) {

@@ -164,6 +164,8 @@ int ztsGetSizesInternal(long long *ifltab, ztsTimeWindow *timeWindow, zStructRec
 				info = (long long *)ifltab[zdssKeys.kinfo];
 				number = (int)info[zdssInfoKeys.kinfoInternalHeadNumber];
 				if (number > INT_HEAD_SIZE) number = INT_HEAD_SIZE;
+				//  Slots past the stored header read as zero, as in zgetRecordSize7
+				memset(internalHeader, 0, sizeof(internalHeader));
 				status = zget(ifltab, info[zdssInfoKeys.kinfoInternalHeadAddress], internalHeader, number, 1);
 				if (zisError(status)) {
 					return status;

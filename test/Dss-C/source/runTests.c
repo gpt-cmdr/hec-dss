@@ -77,6 +77,9 @@ int runTests(long long* ifltab)
 	
 	status = testExpandedTimesIrreg2(ifltab);
 	if (status != STATUS_OKAY) return status;
+
+	status = testTimeSeriesShortHeader(ifltab);
+	if (status != STATUS_OKAY) return status;
 	
 	
 /////////   FIX ME NOW!!!!!!!!!!!!!!!!!

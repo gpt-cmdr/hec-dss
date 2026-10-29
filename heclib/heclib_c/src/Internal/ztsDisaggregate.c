@@ -285,7 +285,13 @@ int ztsDisaggregate(long long *ifltab, int numberToRead, int numberStored,
 	*cnotesLength = 0;
 	cnotesPosition = 0;
 	carrayPosition = 0;	
-	numberValues = valuesLength / valuesSizeRead;
+	//  A value size of zero (not stored in a short header) means no values; do not divide by it
+	if (valuesSizeRead > 0) {
+		numberValues = valuesLength / valuesSizeRead;
+	}
+	else {
+		numberValues = 0;
+	}
 
 
 
@@ -435,7 +441,8 @@ int ztsDisaggregate(long long *ifltab, int numberToRead, int numberStored,
 		//  Now either copy or uncompress the values
 		if (numberStoredToRead > 0) {
 			if (valuesSizeRequested > 0) {
-				if (valuesSizeRead > 0) {
+				//  Without an element size the values cannot be converted; treat them as not stored
+				if ((valuesSizeRead > 0) && (valuesElementSize > 0)) {
 					if (bigEndian()) {
 						number = valuesLength + dataInPosition;
 						if (zmessageLevel(ifltab, MESS_METHOD_TS_READ_ID, MESS_LEVEL_INTERNAL_DIAG_2)) {
@@ -1041,7 +1048,8 @@ int ztsDisaggregateDep(long long *ifltab, int numberToRead, int numberStored,
 		//  Now either copy or uncompress the values
 		if (numberStoredToRead > 0) {
 			if (valuesSizeRequested > 0) {
-				if (valuesSizeRead > 0) {
+				//  Without an element size the values cannot be converted; treat them as not stored
+				if ((valuesSizeRead > 0) && (valuesElementSize > 0)) {
 					//  Is data compressed?
 					if (valuesCompressionFlag == 0) {
 						//  No, just copy it

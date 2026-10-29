@@ -38,6 +38,7 @@ int testBufferedIO(long long *ifltab);
 int testlocation(long long *ifltab);
 int testProfileIrreg(long long *ifltab);
 int testProfileReg(long long *ifltab);
+int testTimeSeriesShortHeader(long long *ifltab);
 int testSqueeze(const char *filename);
 int testTin(long long *ifltab);
 int testExpandedTimes(long long *ifltab);

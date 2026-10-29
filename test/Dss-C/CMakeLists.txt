@@ -20,6 +20,7 @@ test_logging.c
 TestDssC.h
 TestDssC.c
 source/testTimeSeries5.c
+source/testTimeSeriesShortHeader.c
 source/testReclaim.c
 source/testProfileIrreg.c
 source/Bulletin_17C_SSP_Issue.c

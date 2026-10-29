@@ -198,6 +198,7 @@ int ztsRegReadBlock(long long *ifltab, const char *pathname, int boolExists,
 	int temp;
 	float missing;
 	long long *info;
+	int *fullHeader;
 
 	char messageString[80];
 	zStructTransfer* ztransfer;
@@ -241,6 +242,27 @@ int ztsRegReadBlock(long long *ifltab, const char *pathname, int boolExists,
 			zstructFree(ztransfer);
 			return rval;
 		}
+		//  The header is read through INT_HEAD_cnotesLength here and in ztsDisaggregate.
+		//  A shorter stored header (5 or more ints is accepted) does not hold those slots;
+		//  they read as zero, in a buffer the size the writers use (INT_HEAD_SIZE).
+		if (ztransfer->internalHeaderNumber < INT_HEAD_units) {
+			fullHeader = (int *)calloc((size_t)INT_HEAD_SIZE, (size_t)4);
+			if (!fullHeader) {
+				status = zerrorProcessing(ifltab, DSS_FUNCTION_ztsRegReadBlock_ID,
+					zdssErrorCodes.CANNOT_ALLOCATE_MEMORY, INT_HEAD_SIZE, 0,
+					zdssErrorSeverity.MEMORY_ERROR, ztransfer->pathname, "Allocating internalHeader");
+				zstructFree(ztransfer);
+				return status;
+			}
+			for (i = 0; i < ztransfer->internalHeaderNumber; i++) {
+				fullHeader[i] = ztransfer->internalHeader[i];
+			}
+			if (ztransfer->internalHeader && ztransfer->allocated[zSTRUCT_TRANS_internalHeader]) {
+				free(ztransfer->internalHeader);
+			}
+			ztransfer->internalHeader = fullHeader;
+			ztransfer->allocated[zSTRUCT_TRANS_internalHeader] = 1;
+		}
 		if (bigEndian()) {
 			zswitchInts(ztransfer->internalHeader, INT_HEAD_cnotesLength + 1);
 			if (ztransfer->header2Number > 0) {
@@ -250,6 +272,10 @@ int ztsRegReadBlock(long long *ifltab, const char *pathname, int boolExists,
 		*internalHeaderNumber = ztransfer->internalHeaderNumber;
 		if (*internalHeaderNumber > internalHeaderArraySize) *internalHeaderNumber = internalHeaderArraySize;
 		convertIntArray(ztransfer->internalHeader, internalHeader, *internalHeaderNumber, 1, 1);
+		//  Slots past the stored header read as zero, not as values left from an earlier block
+		for (i = *internalHeaderNumber; i < internalHeaderArraySize; i++) {
+			internalHeader[i] = 0;
+		}
 		*valueElementSizeRead = internalHeader[INT_HEAD_valueElementSize];
 		*qualityElementSize = internalHeader[INT_HEAD_qualityElementSize];
 		*inoteElementSize = internalHeader[INT_HEAD_inotesElementSize];

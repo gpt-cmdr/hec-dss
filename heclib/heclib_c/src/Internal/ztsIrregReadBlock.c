@@ -310,6 +310,11 @@ int ztsIrregReadBlock(long long *ifltab, const char *pathname, long long *info,
 		ztransfer->userHeaderMode = userHeaderArraySize;
 		ztransfer->header2Mode = 1;
 
+		//  The header is read into the caller's array and used through INT_HEAD_cnotesLength.
+		//  Slots past a shorter stored header (5 or more ints is accepted) read as zero.
+		for (i = 0; i < internalHeaderArraySize; i++) {
+			internalHeader[i] = 0;
+		}
 		status = zreadInternal(ifltab, ztransfer, bufferControl, buffer, 1);
 		if (zisError(status)) {
 			zstructFree(ztransfer);

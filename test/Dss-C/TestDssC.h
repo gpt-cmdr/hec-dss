@@ -43,6 +43,7 @@ int testTin(long long *ifltab);
 int testExpandedTimes(long long *ifltab);
 int testExpandedTimesIrreg(long long *ifltab);
 int testExpandedTimesIrreg2(long long *ifltab);
+int testTimeSeriesUnitsShortHeader(long long *ifltab);
 int testAlias(long long *ifltab);
 int testReclaim(const char *dssFilename);
 int test_jira_dss_163_weekly_time_series_fails();

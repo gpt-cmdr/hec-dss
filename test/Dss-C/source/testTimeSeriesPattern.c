@@ -3,6 +3,7 @@
 #include <stdlib.h>
 
 #include "heclib.h"
+#include "hecdssInternal.h"
 #include "TestDssC.h"
 
 
@@ -154,5 +155,108 @@ int testTimeSeriesPattern(long long *ifltab)
 	*/
 
 	return 0; 
+}
+
+//  Rewrite a stored time series record with a different internal header
+//  (as another writer may produce), bypassing ztsStore().
+static int rewriteTimeSeriesHeader(long long *ifltab, const char *pathname, int *internalHeader, int numberInts)
+{
+	zStructTransfer *ztransferRead;
+	zStructTransfer *ztransferWrite;
+	int status;
+
+	ztransferRead = zstructTransferNew(pathname, 1);
+	if (!ztransferRead) return -1;
+	status = zread(ifltab, ztransferRead);
+	if (status != STATUS_RECORD_FOUND) {
+		zstructFree(ztransferRead);
+		return -1;
+	}
+	ztransferWrite = zstructTransferNew(pathname, 0);
+	if (!ztransferWrite) {
+		zstructFree(ztransferRead);
+		return -1;
+	}
+	ztransferWrite->dataType = ztransferRead->dataType;
+	ztransferWrite->internalHeader = internalHeader;
+	ztransferWrite->internalHeaderNumber = numberInts;
+	ztransferWrite->header2 = ztransferRead->header2;
+	ztransferWrite->header2Number = ztransferRead->header2Number;
+	ztransferWrite->values1 = ztransferRead->values1;
+	ztransferWrite->values1Number = ztransferRead->values1Number;
+	ztransferWrite->values2 = ztransferRead->values2;
+	ztransferWrite->values2Number = ztransferRead->values2Number;
+	ztransferWrite->values3 = ztransferRead->values3;
+	ztransferWrite->values3Number = ztransferRead->values3Number;
+	ztransferWrite->numberValues = ztransferRead->numberValues;
+	ztransferWrite->logicalNumberValues = ztransferRead->logicalNumberValues;
+	status = zwrite(ifltab, ztransferWrite);
+	zstructFree(ztransferWrite);
+	zstructFree(ztransferRead);
+	return status;
+}
+
+
+//  Units text in a time series internal header must be read only from the
+//  stored header.  Text that fills the header without a null terminator
+//  ends at the end of the header; type and time zone are then not set.
+int testTimeSeriesUnitsShortHeader(long long *ifltab)
+{
+	zStructTimeSeries *tss;
+	float fvalues[24];
+	int internalHeader[20];
+	int numberInts;
+	int i;
+	int status;
+	const char *expected;
+	const char *pathname = "/Basin/Location/Flow/TS-Pattern/1Hour/Unterminated Units/";
+
+	for (i = 0; i < 24; i++) {
+		fvalues[i] = (float)i;
+	}
+
+	for (numberInts = INT_HEAD_units + 2; numberInts <= INT_HEAD_units + 3; numberInts++) {
+		tss = zstructTsNewRegFloats(pathname, fvalues, 24, "21Jan2001", "1200", "cfs", "Inst-Val");
+		tss->startJulianDate = UNDEFINED_TIME;
+		tss->startTimeSeconds = -1;
+		tss->dataType = DATA_TYPE_RTS_PATTERN;
+		status = ztsStore(ifltab, tss, 0);
+		zstructFree(tss);
+		if (zcheckStatus(ifltab, status, 1, "Fail in testTimeSeriesUnitsShortHeader Loc 1, store status ")) return status;
+
+		//  Word INT_HEAD_units is the blank padding word; the text follows it, with no null
+		for (i = 0; i < 20; i++) {
+			internalHeader[i] = 0;
+		}
+		internalHeader[INT_HEAD_timeGranularity] = 1;
+		if (numberInts == INT_HEAD_units + 2) {
+			charLong("ABCD", &internalHeader[INT_HEAD_units + 1], 4, 4, 1, 0);
+			expected = "ABCD";
+		}
+		else {
+			charLong("ABCDEFGH", &internalHeader[INT_HEAD_units + 1], 8, 8, 1, 0);
+			expected = "ABCDEFGH";
+		}
+		status = rewriteTimeSeriesHeader(ifltab, pathname, internalHeader, numberInts);
+		if (zcheckStatus(ifltab, status, 1, "Fail in testTimeSeriesUnitsShortHeader Loc 2, write status ")) return status;
+
+		tss = zstructTsNew(pathname);
+		status = ztsRetrieve(ifltab, tss, 0, 1, 0);
+		if (zcheckStatus(ifltab, status, 1, "Fail in testTimeSeriesUnitsShortHeader Loc 3, retrieve status ")) {
+			zstructFree(tss);
+			return status;
+		}
+		if ((tss->numberValues != 24) || !tss->units || strcmp(tss->units, expected) ||
+			tss->type || tss->timeZoneName) {
+			printf("Fail in testTimeSeriesUnitsShortHeader Loc 4, %d int header: numberValues %d, units \"%s\", type \"%s\", time zone \"%s\"; expected 24, \"%s\", (null), (null)\n",
+				numberInts, tss->numberValues, tss->units ? tss->units : "(null)",
+				tss->type ? tss->type : "(null)", tss->timeZoneName ? tss->timeZoneName : "(null)", expected);
+			zstructFree(tss);
+			return -1;
+		}
+		zstructFree(tss);
+	}
+
+	return 0;
 }
 

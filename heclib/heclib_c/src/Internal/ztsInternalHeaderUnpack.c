@@ -97,15 +97,20 @@ int ztsInternalHeaderUnpack(zStructTimeSeries *tss, int *internalHeader, int int
 	//  Check to see if this record has not been updated yet (and units start in 17)
 	//  If moved, int 17 will either be zero or all blanks
 
+	//  Copy no more than the header holds, and keep a terminator at the end of carray,
+	//  so the strings below end within the stored header even if it has no null.
+	memset(carray, 0, sizeof(carray));
 	if (!unitsHavePadding(internalHeader,INT_HEAD_units)) {
 		//  Depreciated
 		len *= 4;
-		charInt(&internalHeader[INT_HEAD_units], carray, len, sizeof(carray), 0, 0, 0);		
+		if (len > (int)sizeof(carray) - 1) len = (int)sizeof(carray) - 1;
+		charInt(&internalHeader[INT_HEAD_units], carray, len, sizeof(carray) - 1, 0, 0, 0);
 	}
 	else {
 		len--;
 		len *= 4;
-		charLong(&internalHeader[INT_HEAD_units + 1], carray, len, sizeof(carray), 0, -1);
+		if (len > (int)sizeof(carray) - 1) len = (int)sizeof(carray) - 1;
+		charLong(&internalHeader[INT_HEAD_units + 1], carray, len, sizeof(carray) - 1, 0, -1);
 	}
 
 	ipos = 0;
@@ -143,8 +148,9 @@ int ztsInternalHeaderUnpack(zStructTimeSeries *tss, int *internalHeader, int int
 //  allocatedPosition is the position in the tss->allocated array to set if malloc occurs
 int mallocAndAssignString(char** destination, char* source, int* ipos, zStructTimeSeries* tss, int allocatedPosition) {
 
-	
-	int len = strnlen_hec(&source[*ipos],CHAR_ARRAY_SIZE-1);
+	//  Past the end of the text read from the header: nothing more is stored
+	if (*ipos >= CHAR_ARRAY_SIZE) return STATUS_OKAY;
+	int len = strnlen_hec(&source[*ipos], CHAR_ARRAY_SIZE - 1 - *ipos);
 	if (!tss->allocated[allocatedPosition]) {
 		if (len > 0 && trimLength(&source[*ipos])) {
 			*destination = mallocAndCopyTrim(&source[*ipos]);

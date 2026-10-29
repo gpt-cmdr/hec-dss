@@ -106,15 +106,23 @@ int zpdHeadToUnits(zStructPairedData *pds, int *internalHeader, int internalHead
 	//  are on 8-byte word boundaries
 	//  Check to see if this record has not been updated yet
 
+	//  Copy no more than the header holds, and keep a terminator at the end of carray,
+	//  so the strings below end within the stored header even if it has no null.
+	memset(carray, 0, sizeof(carray));
 	if (!unitsHavePadding(internalHeader, INT_HEAD_pdUnits)) {
 		//  Depreciated
 		len *= 4;
-		charInt(&internalHeader[INT_HEAD_pdUnits], carray, len, sizeof(carray), 0, 0, 1);
+		if (len > (int)sizeof(carray) - 1) len = (int)sizeof(carray) - 1;
+		charInt(&internalHeader[INT_HEAD_pdUnits], carray, len, sizeof(carray) - 1, 0, 0, 1);
 	}
 	else {
 		len--;
 		len *= 4;
-		charLong(&internalHeader[INT_HEAD_pdUnits + 1], carray, len, sizeof(carray), 0, -1);
+		//  Only the padding word is stored; a zero length would make charLong
+		//  copy until it finds a null, past the end of the header.
+		if (len <= 0) return 0;
+		if (len > (int)sizeof(carray) - 1) len = (int)sizeof(carray) - 1;
+		charLong(&internalHeader[INT_HEAD_pdUnits + 1], carray, len, sizeof(carray) - 1, 0, -1);
 	}
 
 
@@ -130,6 +138,7 @@ int zpdHeadToUnits(zStructPairedData *pds, int *internalHeader, int internalHead
 	}
 	ipos += len + 1;
 
+	if (ipos >= (int)sizeof(carray)) return 0;
 	len = (int)strlen(&carray[ipos]);
 	if (!len) return 0;
 	if (trimLength(&carray[ipos])) {
@@ -141,6 +150,7 @@ int zpdHeadToUnits(zStructPairedData *pds, int *internalHeader, int internalHead
 	}
 	ipos += len + 1;
 
+	if (ipos >= (int)sizeof(carray)) return 0;
 	len = (int)strlen(&carray[ipos]);
 	if (!len) return 0;
 	if (trimLength(&carray[ipos])) {
@@ -152,6 +162,7 @@ int zpdHeadToUnits(zStructPairedData *pds, int *internalHeader, int internalHead
 	}
 	ipos += len + 1;
 
+	if (ipos >= (int)sizeof(carray)) return 0;
 	len = (int)strlen(&carray[ipos]);
 	if (!len) return 0;
 	if (trimLength(&carray[ipos])) {
@@ -163,6 +174,7 @@ int zpdHeadToUnits(zStructPairedData *pds, int *internalHeader, int internalHead
 	}
 	ipos += len + 1;
 
+	if (ipos >= (int)sizeof(carray)) return 0;
 	len = (int)strlen(&carray[ipos]);
 	if (!len) return 0;
 	if (trimLength(&carray[ipos])) {

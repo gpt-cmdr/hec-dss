@@ -100,6 +100,9 @@ int runTests(long long* ifltab)
 	
 	status = TestPairedData3(ifltab);
 	if (status != STATUS_OKAY) return status;
+
+	status = testPairedDataShortHeader(ifltab);
+	if (status != STATUS_OKAY) return status;
 	
 	
 	status = testTin(ifltab);

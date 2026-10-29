@@ -8,6 +8,115 @@
 #include "hecdssInternal.h"
 #include "TestDssC.h"
 
+
+//  Rewrite a stored paired data record with a different internal header
+//  (as another writer may produce), bypassing zpdStore().
+static int rewritePairedDataHeader(long long *ifltab, const char *pathname, int *internalHeader, int numberInts)
+{
+	zStructTransfer *ztransferRead;
+	zStructTransfer *ztransferWrite;
+	int status;
+
+	ztransferRead = zstructTransferNew(pathname, 1);
+	if (!ztransferRead) return -1;
+	status = zread(ifltab, ztransferRead);
+	if (status != STATUS_RECORD_FOUND) {
+		zstructFree(ztransferRead);
+		return -1;
+	}
+	ztransferWrite = zstructTransferNew(pathname, 0);
+	if (!ztransferWrite) {
+		zstructFree(ztransferRead);
+		return -1;
+	}
+	ztransferWrite->dataType = ztransferRead->dataType;
+	ztransferWrite->internalHeader = internalHeader;
+	ztransferWrite->internalHeaderNumber = numberInts;
+	ztransferWrite->header2 = ztransferRead->header2;
+	ztransferWrite->header2Number = ztransferRead->header2Number;
+	ztransferWrite->values1 = ztransferRead->values1;
+	ztransferWrite->values1Number = ztransferRead->values1Number;
+	ztransferWrite->values2 = ztransferRead->values2;
+	ztransferWrite->values2Number = ztransferRead->values2Number;
+	ztransferWrite->numberValues = ztransferRead->numberValues;
+	ztransferWrite->logicalNumberValues = ztransferRead->logicalNumberValues;
+	status = zwrite(ifltab, ztransferWrite);
+	zstructFree(ztransferWrite);
+	zstructFree(ztransferRead);
+	return status;
+}
+
+
+static int checkPairedDataString(const char *name, const char *value, const char *expected, int numberInts)
+{
+	if ((value == NULL) && (expected == NULL)) return 0;
+	if ((value != NULL) && (expected != NULL) && !strcmp(value, expected)) return 0;
+	printf("Fail in testPairedDataShortHeader, %d int header: %s is \"%s\", expected \"%s\"\n",
+		numberInts, name, value ? value : "(null)", expected ? expected : "(null)");
+	return -1;
+}
+
+
+//  Paired data records whose internal header ends at, or just after, the units
+//  word.  The units text must be read only from the stored header:
+//  a 6 int header (only the blank padding word) has no units, and units text
+//  that fills the header without a null terminator ends at the end of the header.
+int testPairedDataShortHeader(long long *ifltab)
+{
+	zStructPairedData *pds;
+	float ordinates[3] = { 1.0f, 2.0f, 3.0f };
+	float values[3] = { 10.0f, 20.0f, 30.0f };
+	int internalHeader[8];
+	int numberInts;
+	int i;
+	int status;
+	const char *pathname = "/Basin/Location/Stage-Flow///Short Header/";
+
+	for (numberInts = 6; numberInts <= 8; numberInts += 2) {
+		pds = zstructPdNewFloats(pathname, ordinates, values, 3, 1, "ft", "Unt", "cfs", "Unt");
+		status = zpdStore(ifltab, pds, 0);
+		zstructFree(pds);
+		if (zcheckStatus(ifltab, status, 1, "Fail in testPairedDataShortHeader Loc 1, store status ")) return status;
+
+		for (i = 0; i < 8; i++) {
+			internalHeader[i] = 0;
+		}
+		internalHeader[INT_HEAD_pdNumberOrdinates] = 3;
+		internalHeader[INT_HEAD_pdNumberCurves] = 1;
+		internalHeader[INT_HEAD_pdBoolIndependentIsXaxis] = 1;
+		if (numberInts == 8) {
+			//  Units text after the padding word, with no null terminator
+			charLong("ABCDEFGH", &internalHeader[INT_HEAD_pdUnits + 1], 8, 8, 1, 0);
+		}
+		status = rewritePairedDataHeader(ifltab, pathname, internalHeader, numberInts);
+		if (zcheckStatus(ifltab, status, 1, "Fail in testPairedDataShortHeader Loc 2, write status ")) return status;
+
+		pds = zstructPdNew(pathname);
+		status = zpdRetrieve(ifltab, pds, 0);
+		if (zcheckStatus(ifltab, status, 1, "Fail in testPairedDataShortHeader Loc 3, retrieve status ")) {
+			zstructFree(pds);
+			return status;
+		}
+		if ((pds->numberOrdinates != 3) || (pds->numberCurves != 1) ||
+			(pds->floatOrdinates[2] != 3.0f) || (pds->floatValues[2] != 30.0f)) {
+			printf("Fail in testPairedDataShortHeader Loc 4, %d int header: %d ordinates, %d curves\n",
+				numberInts, pds->numberOrdinates, pds->numberCurves);
+			zstructFree(pds);
+			return -1;
+		}
+		status = checkPairedDataString("unitsIndependent", pds->unitsIndependent, (numberInts == 8) ? "ABCDEFGH" : NULL, numberInts);
+		status |= checkPairedDataString("typeIndependent", pds->typeIndependent, NULL, numberInts);
+		status |= checkPairedDataString("unitsDependent", pds->unitsDependent, NULL, numberInts);
+		status |= checkPairedDataString("typeDependent", pds->typeDependent, NULL, numberInts);
+		status |= checkPairedDataString("timeZoneName", pds->timeZoneName, NULL, numberInts);
+		zstructFree(pds);
+		if (status) return status;
+	}
+
+	return 0;
+}
+
+
 //  Test Paired Data in DSS-7
 //
 

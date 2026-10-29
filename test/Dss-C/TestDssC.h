@@ -30,6 +30,7 @@ int testTimeSeriesPattern(long long *ifltab);
 int testPairedData(long long *ifltab);
 int TestPairedData2(long long *ifltab);
 int TestPairedData3(long long *ifltab);
+int testPairedDataShortHeader(long long *ifltab);
 int testTextTable(long long *ifltab);
 int testWriteRead(long long *ifltab);
 int testArrayWriteRead(long long *ifltab);

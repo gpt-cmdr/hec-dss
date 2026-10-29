@@ -4,6 +4,17 @@
 #include "heclib.h"
 
 
+//  A count in the TIN header does not match the arrays stored with it
+static int zspatialTinInvalidRecord(long long *ifltab, zStructTransfer *ztransfer, long long count)
+{
+	int status = zerrorProcessing(ifltab, DSS_FUNCTION_zspatialTinRetrieve_ID,
+		zdssErrorCodes.INVALID_RECORD_HEADER, ztransfer->dataType, count,
+		zdssErrorSeverity.WARNING, ztransfer->pathname, "");
+	zstructFree(ztransfer);
+	return status;
+}
+
+
 /**
 *  Function:	zspatialTinRetrieve
 *
@@ -199,6 +210,11 @@ int zspatialTinRetrieve(long long *ifltab, zStructSpatialTin *tinStruct, int boo
 	}
 	//  Values 1, x, y, value
 	if (ztransfer->values1 && (ztransfer->values1Number > 0)) {
+		//  x, y and value for each point (the layout zspatialTinStore writes)
+		if ((tinStruct->numberPoints < 0) ||
+			((long long)tinStruct->numberPoints * 3 > (long long)ztransfer->values1Number)) {
+			return zspatialTinInvalidRecord(ifltab, ztransfer, (long long)tinStruct->numberPoints);
+		}
 		tinStruct->xCoordinate = (float *)calloc(tinStruct->numberPoints, 4);
 		tinStruct->yCoordinate = (float *)calloc(tinStruct->numberPoints, 4);
 		tinStruct->value = (float *)calloc(tinStruct->numberPoints, 4);
@@ -214,6 +230,11 @@ int zspatialTinRetrieve(long long *ifltab, zStructSpatialTin *tinStruct, int boo
 	}
 	//  Values 2, other arrays
 	if (ztransfer->values2 && (ztransfer->values2Number > 0)) {
+		//  Point types at 0 and connection counts at 2 * numberPoints
+		if ((tinStruct->numberPoints < 0) ||
+			((long long)tinStruct->numberPoints * 3 > (long long)ztransfer->values2Number)) {
+			return zspatialTinInvalidRecord(ifltab, ztransfer, (long long)tinStruct->numberPoints);
+		}
 		tinStruct->pointType = (int *)calloc(tinStruct->numberPoints, 4);
 		tinStruct->numberConnections = (int *)calloc(tinStruct->numberPoints, 4);
 		convertDataArray(&ztransfer->values2[0], (int *)tinStruct->pointType, tinStruct->numberPoints, 1, 1);
@@ -226,6 +247,9 @@ int zspatialTinRetrieve(long long *ifltab, zStructSpatialTin *tinStruct, int boo
 	}
 	//  Value 3, connections  tinStruct->connection
 	if (ztransfer->values3 && (ztransfer->values3Number > 0)) {
+		if (tinStruct->connectTableLen > ztransfer->values3Number) {
+			return zspatialTinInvalidRecord(ifltab, ztransfer, (long long)tinStruct->connectTableLen);
+		}
 		if (tinStruct->connectTableLen > 0) {
 			tinStruct->connectTo = (int *)calloc(tinStruct->connectTableLen, 4);
 			convertDataArray(ztransfer->values3, tinStruct->connectTo, tinStruct->connectTableLen, 1, 1);

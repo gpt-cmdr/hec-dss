@@ -1,7 +1,19 @@
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 
 #include "heclib.h"
+
+
+//  A count in the grid header does not match the arrays stored with it
+static int zspatialGridInvalidRecord(long long *ifltab, zStructTransfer *ztransfer, long long count)
+{
+	int status = zerrorProcessing(ifltab, DSS_FUNCTION_zspatialGridRetrieve_ID,
+		zdssErrorCodes.INVALID_RECORD_HEADER, ztransfer->dataType, count,
+		zdssErrorSeverity.WARNING, ztransfer->pathname, "");
+	zstructFree(ztransfer);
+	return status;
+}
 
 /**
 *  Function:	zspatialGridRetrieveVersion
@@ -306,6 +318,12 @@ int zspatialGridRetrieve(long long *ifltab, zStructSpatialGrid *gridStruct, int 
 			}
 			//  Values 1, x, y, value
 			if (ztransfer->values1 && (ztransfer->values1Number > 0)) {
+				//  min, max and mean, then _numberOfRanges range limits and as many counts
+				//  (the layout zspatialGridStore writes)
+				if ((gridStruct->_numberOfRanges < 0) ||
+					(((long long)gridStruct->_numberOfRanges * 2) + 3 > (long long)ztransfer->values1Number)) {
+					return zspatialGridInvalidRecord(ifltab, ztransfer, (long long)gridStruct->_numberOfRanges);
+				}
 				gridStruct->_maxDataValue = calloc(1, 4);
 				gridStruct->_minDataValue = calloc(1, 4);
 				gridStruct->_meanDataValue = calloc(1, 4);
@@ -322,10 +340,18 @@ int zspatialGridRetrieve(long long *ifltab, zStructSpatialGrid *gridStruct, int 
 
 			// Actual Data 
 			if (ztransfer->values3 && (ztransfer->values3Number > 0)) {
-				int dataSize = (gridStruct->_numberOfCellsX * gridStruct->_numberOfCellsY);
+				long long numberCells = (long long)gridStruct->_numberOfCellsX * (long long)gridStruct->_numberOfCellsY;
+				if ((gridStruct->_numberOfCellsX < 0) || (gridStruct->_numberOfCellsY < 0) || (numberCells > INT_MAX)) {
+					return zspatialGridInvalidRecord(ifltab, ztransfer, numberCells);
+				}
+				int dataSize = (int)numberCells;
 				int numLongs = ((dataSize - 1) / 2) + 1;
 				switch (gridStruct->_compressionMethod) {
 				case NO_COMPRESSION:
+					//  One stored int per cell
+					if (numberCells > (long long)ztransfer->values3Number) {
+						return zspatialGridInvalidRecord(ifltab, ztransfer, numberCells);
+					}
 					if (bigEndian()) {
 						zswitchInts(ztransfer->values3, ztransfer->values3Number);
 					}
@@ -333,6 +359,13 @@ int zspatialGridRetrieve(long long *ifltab, zStructSpatialGrid *gridStruct, int 
 					convertDataArray(&ztransfer->values3[0], (int *)gridStruct->_data, dataSize, 1, 1);
 					break;
 				case ZLIB_COMPRESSION:
+					//  The compressed bytes must be within the stored array, and the cells
+					//  (numLongs * 8 bytes, as zspatialGridStore compresses them) must fit in an int size
+					if ((gridStruct->_sizeofCompressedElements <= 0) ||
+						((long long)gridStruct->_sizeofCompressedElements > (long long)ztransfer->values3Number * 4) ||
+						((long long)numLongs * 8 > INT_MAX)) {
+						return zspatialGridInvalidRecord(ifltab, ztransfer, (long long)gridStruct->_sizeofCompressedElements);
+					}
 					buffer = (void *)calloc(ztransfer->values3Number + 2, 4);
 					charInt((void *)ztransfer->values3, buffer, ztransfer->values3Number * 4, ztransfer->values3Number * 4, 0, 0, 0);
 					// Uncompress data
@@ -345,6 +378,12 @@ int zspatialGridRetrieve(long long *ifltab, zStructSpatialGrid *gridStruct, int 
 						zstructFree(ztransfer);
 						return zerrorProcessing(ifltab, DSS_FUNCTION_zspatialGridRetrieve_ID, zdssErrorCodes.READ_ERROR,
 							0, 0, zdssErrorSeverity.READ_ERROR, "", "gridStruct error in decompression");
+					}
+					else if ((long long)ret < numberCells * 4) {
+						//  Fewer bytes than cells: the header does not describe the stored data
+						free(buffer);
+						free(values);
+						return zspatialGridInvalidRecord(ifltab, ztransfer, (long long)ret);
 					}
 					else {
 #if 0

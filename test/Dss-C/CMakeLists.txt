@@ -63,6 +63,7 @@ source/testTimeSeriesStruct4.c
 source/SampleTimeSeries3.c
 source/testPairedData.c
 source/testTin.c
+source/testGridRecordValidation.c
 source/testExpandedTimesIrreg2.c
 source/testztsStructBill.c
 source/testTimeSeriesPattern.c

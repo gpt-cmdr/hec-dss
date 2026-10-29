@@ -86,6 +86,9 @@ int runTests(long long* ifltab)
 	status = testTextTable(ifltab);
 	if (status != STATUS_OKAY) return status;
 
+	status = testGridRecordValidation(ifltab);
+	if (status != STATUS_OKAY) return status;
+
 	status = testProfileReg(ifltab);
 	if (status != STATUS_OKAY) return status;		
 

@@ -35,6 +35,7 @@ int testWriteRead(long long *ifltab);
 int testArrayWriteRead(long long *ifltab);
 int testInternalIO(long long *ifltab);
 int testBufferedIO(long long *ifltab);
+int testGridRecordValidation(long long *ifltab);
 int testlocation(long long *ifltab);
 int testProfileIrreg(long long *ifltab);
 int testProfileReg(long long *ifltab);

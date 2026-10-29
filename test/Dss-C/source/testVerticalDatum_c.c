@@ -9,6 +9,7 @@
 void testDelimitedStringOps();
 void testGzipAndEncodingOps();
 void testUserHeaderOps();
+int testUserHeaderTrim();
 void testVerticalDatumInfoSerialization();
 void testZsetZquery();
 void testStoreRetrieveTimeSeries();
@@ -23,6 +24,7 @@ int test_vertical_datums_c() {
     testDelimitedStringOps();
     testGzipAndEncodingOps();
     testUserHeaderOps();
+    if (testUserHeaderTrim()) return -1;
     testVerticalDatumInfoSerialization();
     testZsetZquery();
     testStoreRetrieveTimeSeries();
@@ -121,6 +123,26 @@ void testUserHeaderOps() {
     assert(!strcmp(userHeaderStringIn, userHeaderStringOut));
     free(userHeader);
     free(userHeaderStringOut);
+}
+int testUserHeaderTrim() {
+    // userHeaderToString() drops trailing blanks and keeps leading and embedded ones.
+    // Uses explicit checks rather than assert() so the test also runs in Release builds.
+    const char *in[]       = {"cfs     ", "        ", " ", "a b  ", "a b", "  lead", "ABCDEFGH"};
+    const char *expected[] = {"cfs",      "",         "",  "a b",   "a b", "  lead", "ABCDEFGH"};
+    int failures = 0;
+    for (size_t i = 0; i < sizeof(in) / sizeof(in[0]); ++i) {
+        int   userHeaderNumber;
+        int  *userHeader = stringToUserHeader(in[i], &userHeaderNumber);
+        char *out = userHeaderToString(userHeader, userHeaderNumber);
+        if (!out || strcmp(out, expected[i])) {
+            printf("Fail in testUserHeaderTrim: header \"%s\" (%d ints) gave \"%s\", expected \"%s\"\n",
+                in[i], userHeaderNumber, out ? out : "(null)", expected[i]);
+            failures++;
+        }
+        free(userHeader);
+        free(out);
+    }
+    return failures;
 }
 void testVerticalDatumInfoSerialization() {
     // test stringToVerticalDatumInfo() and verticalDatumInfoToString()

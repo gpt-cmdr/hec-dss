@@ -40,6 +40,7 @@ int testProfileIrreg(long long *ifltab);
 int testProfileReg(long long *ifltab);
 int testSqueeze(const char *filename);
 int testTin(long long *ifltab);
+int testSpatialShortHeader(long long *ifltab);
 int testExpandedTimes(long long *ifltab);
 int testExpandedTimesIrreg(long long *ifltab);
 int testExpandedTimesIrreg2(long long *ifltab);

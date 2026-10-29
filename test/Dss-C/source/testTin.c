@@ -293,3 +293,215 @@ int testTin(long long *ifltab)
 */	
 	return status;
 }
+
+
+//  Rewrite a stored record with a different internal header, user header or
+//  header2 (as another writer may produce), bypassing the store functions.
+static int rewriteSpatialRecord(long long *ifltab, const char *pathname,
+	int *internalHeader, int internalHeaderNumber,
+	int userHeaderNumber, int boolKeepHeader2)
+{
+	zStructTransfer *ztransferRead;
+	zStructTransfer *ztransferWrite;
+	int status;
+
+	ztransferRead = zstructTransferNew(pathname, 1);
+	if (!ztransferRead) return -1;
+	status = zread(ifltab, ztransferRead);
+	if (status != STATUS_RECORD_FOUND) {
+		zstructFree(ztransferRead);
+		return -1;
+	}
+	ztransferWrite = zstructTransferNew(pathname, 0);
+	if (!ztransferWrite) {
+		zstructFree(ztransferRead);
+		return -1;
+	}
+	ztransferWrite->dataType = ztransferRead->dataType;
+	if (internalHeader) {
+		ztransferWrite->internalHeader = internalHeader;
+		ztransferWrite->internalHeaderNumber = internalHeaderNumber;
+	}
+	else {
+		ztransferWrite->internalHeader = ztransferRead->internalHeader;
+		ztransferWrite->internalHeaderNumber = ztransferRead->internalHeaderNumber;
+	}
+	if (boolKeepHeader2) {
+		ztransferWrite->header2 = ztransferRead->header2;
+		ztransferWrite->header2Number = ztransferRead->header2Number;
+	}
+	ztransferWrite->userHeader = ztransferRead->userHeader;
+	ztransferWrite->userHeaderNumber = ztransferRead->userHeaderNumber;
+	if ((userHeaderNumber >= 0) && (userHeaderNumber < ztransferRead->userHeaderNumber)) {
+		ztransferWrite->userHeaderNumber = userHeaderNumber;
+	}
+	ztransferWrite->userHeaderMode = 2;  //  Store the user header as given (no string padding)
+	ztransferWrite->values1 = ztransferRead->values1;
+	ztransferWrite->values1Number = ztransferRead->values1Number;
+	ztransferWrite->values2 = ztransferRead->values2;
+	ztransferWrite->values2Number = ztransferRead->values2Number;
+	ztransferWrite->values3 = ztransferRead->values3;
+	ztransferWrite->values3Number = ztransferRead->values3Number;
+	ztransferWrite->numberValues = ztransferRead->numberValues;
+	ztransferWrite->logicalNumberValues = ztransferRead->logicalNumberValues;
+	status = zwrite(ifltab, ztransferWrite);
+	zstructFree(ztransferWrite);
+	zstructFree(ztransferRead);
+	return status;
+}
+
+
+static int isInvalidHeaderError(int status)
+{
+	int highFunction, lowFunction, dssError, errorStatus;
+	if (status == STATUS_OKAY) return 0;
+	zerrorDecode(status, &highFunction, &lowFunction, &dssError, &errorStatus);
+	return dssError == zdssErrorCodes.INVALID_RECORD_HEADER;
+}
+
+
+static int storeSmallGrid(long long *ifltab, const char *pathname)
+{
+	zStructSpatialGrid *grid;
+	float *data;
+	int idx;
+	int status;
+
+	grid = zstructSpatialGridNew(pathname);
+	if (!grid) return -1;
+	grid->_type = 420;
+	grid->_dataSource = mallocAndCopy("INTERNAL");
+	grid->_version = 1;
+	grid->_dataUnits = mallocAndCopy("mm");
+	grid->_dataType = PER_AVER;
+	grid->_numberOfCellsX = 4;
+	grid->_numberOfCellsY = 3;
+	grid->_cellSize = 5.0f;
+	grid->_compressionMethod = NO_COMPRESSION;
+	grid->_numberOfRanges = 2;
+	grid->_rangeLimitTable = (float *)calloc(2, sizeof(float));
+	grid->_numberEqualOrExceedingRangeLimit = (int *)calloc(2, sizeof(int));
+	grid->_srsDefinitionType = 1;
+	grid->_srsName = mallocAndCopy("SRS");
+	grid->_srsDefinition = mallocAndCopy("TEST");
+	grid->_xCoordOfGridCellZero = 10.5f;
+	grid->_yCoordOfGridCellZero = 20.5f;
+	grid->_nullValue = -1.0f;
+	grid->_timeZoneID = mallocAndCopy("UTC");
+	grid->_maxDataValue = calloc(1, sizeof(float));
+	grid->_minDataValue = calloc(1, sizeof(float));
+	grid->_meanDataValue = calloc(1, sizeof(float));
+	data = (float *)calloc(12, sizeof(float));
+	if (!data) {
+		zstructFree(grid);
+		return -1;
+	}
+	for (idx = 0; idx < 12; idx++) {
+		data[idx] = (float)idx;
+	}
+	grid->_data = data;
+	status = zspatialGridStore(ifltab, grid);
+	zstructFree(grid);
+	return status;
+}
+
+
+//  Grid and TIN records whose headers are shorter than the reader expects:
+//  a short internal header is rejected as an invalid header instead of being
+//  read past its end; a short grid user header sets only the values it holds;
+//  a grid without header2 text reads with empty strings.
+int testSpatialShortHeader(long long *ifltab)
+{
+	zStructSpatialGrid *grid;
+	zStructSpatialTin *tin;
+	zStructTransfer *ztransfer;
+	int internalHeader[2] = { VERSION_100, 0 };
+	int values[4] = { 0, 0, 0, 0 };
+	int version;
+	int status;
+	const char *gridPath = "/SHG/Basin/Precip/01Jan2001:0100/01Jan2001:0200/Short Header/";
+	const char *tinPath = "/A/B/Elev/01Jan2001:0100//Short Header/";
+
+	//  Grid internal header of 2 ints
+	status = storeSmallGrid(ifltab, gridPath);
+	if (zcheckStatus(ifltab, status, 1, "Fail in testSpatialShortHeader Loc 1, grid store status ")) return status;
+	status = rewriteSpatialRecord(ifltab, gridPath, internalHeader, 2, -1, 1);
+	if (zcheckStatus(ifltab, status, 1, "Fail in testSpatialShortHeader Loc 2, write status ")) return status;
+	version = 0;
+	status = zspatialGridRetrieveVersion(ifltab, gridPath, &version);
+	if ((status != STATUS_RECORD_FOUND) || (version != -VERSION_100)) {
+		printf("Fail in testSpatialShortHeader Loc 3, version status %d, version %d\n", status, version);
+		return -1;
+	}
+	grid = zstructSpatialGridNew(gridPath);
+	status = zspatialGridRetrieve(ifltab, grid, 1);
+	zstructFree(grid);
+	if (!isInvalidHeaderError(status)) {
+		printf("Fail in testSpatialShortHeader Loc 4, 2 int grid header: status %d, expected an invalid header error\n", status);
+		return -1;
+	}
+
+	//  Grid user header of 1 int: only the cell size is stored
+	status = storeSmallGrid(ifltab, gridPath);
+	if (zcheckStatus(ifltab, status, 1, "Fail in testSpatialShortHeader Loc 10, grid store status ")) return status;
+	status = rewriteSpatialRecord(ifltab, gridPath, 0, 0, 1, 1);
+	if (zcheckStatus(ifltab, status, 1, "Fail in testSpatialShortHeader Loc 11, write status ")) return status;
+	grid = zstructSpatialGridNew(gridPath);
+	status = zspatialGridRetrieve(ifltab, grid, 1);
+	if (zcheckStatus(ifltab, status, 1, "Fail in testSpatialShortHeader Loc 12, retrieve status ")) {
+		zstructFree(grid);
+		return status;
+	}
+	if ((grid->_cellSize != 5.0f) || (grid->_xCoordOfGridCellZero != 0.0f) ||
+		(grid->_yCoordOfGridCellZero != 0.0f) || (grid->_nullValue != 0.0f)) {
+		printf("Fail in testSpatialShortHeader Loc 13, 1 int user header: cell size %f, x %f, y %f, null %f; expected 5, 0, 0, 0\n",
+			grid->_cellSize, grid->_xCoordOfGridCellZero, grid->_yCoordOfGridCellZero, grid->_nullValue);
+		zstructFree(grid);
+		return -1;
+	}
+	zstructFree(grid);
+
+	//  Grid without header2 (no units, source, SRS or time zone text)
+	status = storeSmallGrid(ifltab, gridPath);
+	if (zcheckStatus(ifltab, status, 1, "Fail in testSpatialShortHeader Loc 20, grid store status ")) return status;
+	status = rewriteSpatialRecord(ifltab, gridPath, 0, 0, -1, 0);
+	if (zcheckStatus(ifltab, status, 1, "Fail in testSpatialShortHeader Loc 21, write status ")) return status;
+	grid = zstructSpatialGridNew(gridPath);
+	status = zspatialGridRetrieve(ifltab, grid, 1);
+	if (zcheckStatus(ifltab, status, 1, "Fail in testSpatialShortHeader Loc 22, retrieve status ")) {
+		zstructFree(grid);
+		return status;
+	}
+	if (!grid->_dataUnits || strlen(grid->_dataUnits) || !grid->_timeZoneID || strlen(grid->_timeZoneID) ||
+		(grid->_numberOfCellsX != 4) || (grid->_numberOfCellsY != 3)) {
+		printf("Fail in testSpatialShortHeader Loc 23, grid without header2: units \"%s\", time zone \"%s\", cells %d x %d\n",
+			grid->_dataUnits ? grid->_dataUnits : "(null)", grid->_timeZoneID ? grid->_timeZoneID : "(null)",
+			grid->_numberOfCellsX, grid->_numberOfCellsY);
+		zstructFree(grid);
+		return -1;
+	}
+	zstructFree(grid);
+
+	//  TIN internal header of 2 ints (zspatialTinStore writes 12)
+	ztransfer = zstructTransferNew(tinPath, 0);
+	if (!ztransfer) return -1;
+	internalHeader[0] = 0;
+	ztransfer->dataType = DATA_TYPE_SPATIAL_TIN;
+	ztransfer->internalHeader = internalHeader;
+	ztransfer->internalHeaderNumber = 2;
+	ztransfer->values1 = values;
+	ztransfer->values1Number = 4;
+	ztransfer->numberValues = 4;
+	status = zwrite(ifltab, ztransfer);
+	zstructFree(ztransfer);
+	if (zcheckStatus(ifltab, status, 1, "Fail in testSpatialShortHeader Loc 30, write status ")) return status;
+	tin = zstructSpatialTinNew(tinPath);
+	status = zspatialTinRetrieve(ifltab, tin, 0);
+	zstructFree(tin);
+	if (!isInvalidHeaderError(status)) {
+		printf("Fail in testSpatialShortHeader Loc 31, 2 int TIN header: status %d, expected an invalid header error\n", status);
+		return -1;
+	}
+
+	return 0;
+}

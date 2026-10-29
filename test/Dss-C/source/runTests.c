@@ -105,6 +105,9 @@ int runTests(long long* ifltab)
 	status = testTin(ifltab);
 	if (status != STATUS_OKAY) return status;
 
+	status = testSpatialShortHeader(ifltab);
+	if (status != STATUS_OKAY) return status;
+
 	status = testAlias(ifltab);
 	if (status) return status;
 

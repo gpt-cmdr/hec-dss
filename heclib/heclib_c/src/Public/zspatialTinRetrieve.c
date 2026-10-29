@@ -124,6 +124,15 @@ int zspatialTinRetrieve(long long *ifltab, zStructSpatialTin *tinStruct, int boo
 		zstructFree(ztransfer);
 		return status;
 	}
+	//  zspatialTinStore writes 12 ints; reading a shorter header would run past it
+	if (ztransfer->internalHeaderNumber < 12) {
+		status = zerrorProcessing(ifltab, DSS_FUNCTION_zspatialTinRetrieve_ID,
+			zdssErrorCodes.INVALID_RECORD_HEADER, ztransfer->dataType,
+			(long long)ztransfer->internalHeaderNumber,
+			zdssErrorSeverity.WARNING, ztransfer->pathname, "");
+		zstructFree(ztransfer);
+		return status;
+	}
 
 	if (bigEndian()) {
 		zswitchInts(ztransfer->internalHeader, ztransfer->internalHeaderNumber);
@@ -146,7 +155,10 @@ int zspatialTinRetrieve(long long *ifltab, zStructSpatialTin *tinStruct, int boo
 
 	//  Header 2, character information
 	str = (char *)calloc(ztransfer->header2Number + 2, 4);
-	charInt(ztransfer->header2, str, (ztransfer->header2Number * 4), (ztransfer->header2Number * 4), 0, 0, 0);
+	//  With no header2 stored, the strings are empty (a zero length would make charInt use strlen)
+	if (ztransfer->header2 && (ztransfer->header2Number > 0)) {
+		charInt(ztransfer->header2, str, (ztransfer->header2Number * 4), (ztransfer->header2Number * 4), 0, 0, 0);
+	}
 
 	count = 0;
 	tinStruct->SpatialReferenceSystem = mallocAndCopy(&str[count]);

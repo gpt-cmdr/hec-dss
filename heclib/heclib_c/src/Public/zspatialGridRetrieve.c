@@ -102,8 +102,9 @@ int zspatialGridRetrieveVersion(long long *ifltab, const char *cpath, int* gridS
 		zswitchInts(ztransfer->internalHeader, ztransfer->internalHeaderNumber);
 	}
 
-	if (ztransfer->internalHeader[0] < 0)
-		*gridStructVersion = -ztransfer->internalHeader[0];
+	if ((ztransfer->internalHeaderNumber > INT_HEAD_grid_structVersion) &&
+		(ztransfer->internalHeader[INT_HEAD_grid_structVersion] < 0))
+		*gridStructVersion = -ztransfer->internalHeader[INT_HEAD_grid_structVersion];
 	else
 		*gridStructVersion = 0;
 
@@ -240,6 +241,18 @@ int zspatialGridRetrieve(long long *ifltab, zStructSpatialGrid *gridStruct, int 
 	}
 
 	//  Header 1, basic info
+	//  A version 100 header holds at least the words read below (zspatialGridStore
+	//  writes INT_HEAD_grid_internalHeaderNumber); a shorter one would be read past its end.
+	if ((ztransfer->internalHeaderNumber <= INT_HEAD_grid_structVersion) ||
+		((ztransfer->internalHeader[INT_HEAD_grid_structVersion] == VERSION_100) &&
+		 (ztransfer->internalHeaderNumber <= INT_HEAD_grid_storageDataType))) {
+		status = zerrorProcessing(ifltab, DSS_FUNCTION_zspatialGridRetrieve_ID,
+			zdssErrorCodes.INVALID_RECORD_HEADER, ztransfer->dataType,
+			(long long)ztransfer->internalHeaderNumber,
+			zdssErrorSeverity.WARNING, ztransfer->pathname, "");
+		zstructFree(ztransfer);
+		return status;
+	}
 	gridStruct->_structVersion = ztransfer->internalHeader[INT_HEAD_grid_structVersion];
 	// Can only handle version 1 records 
 	if (gridStruct->_structVersion == VERSION_100) {
@@ -262,7 +275,10 @@ int zspatialGridRetrieve(long long *ifltab, zStructSpatialGrid *gridStruct, int 
 
 		//  Header 2, character information
 		str = (char *)calloc(ztransfer->header2Number + 2, 4);
-		charInt(ztransfer->header2, str, (ztransfer->header2Number * 4), (ztransfer->header2Number * 4), 0, 0, 0);
+		//  With no header2 stored, the strings are empty (a zero length would make charInt use strlen)
+		if (ztransfer->header2 && (ztransfer->header2Number > 0)) {
+			charInt(ztransfer->header2, str, (ztransfer->header2Number * 4), (ztransfer->header2Number * 4), 0, 0, 0);
+		}
 
 		count = 0;
 		gridStruct->_dataUnits = mallocAndCopy(&str[count]);
@@ -294,10 +310,12 @@ int zspatialGridRetrieve(long long *ifltab, zStructSpatialGrid *gridStruct, int 
 			if (bigEndian()) {
 				zswitchInts(ztransfer->userHeader, ztransfer->userHeaderNumber);
 			}
-			memcpy(&gridStruct->_cellSize,             &ztransfer->userHeader[0], 4);
-			memcpy(&gridStruct->_xCoordOfGridCellZero, &ztransfer->userHeader[1], 4);
-			memcpy(&gridStruct->_yCoordOfGridCellZero, &ztransfer->userHeader[2], 4);
-			memcpy(&gridStruct->_nullValue,            &ztransfer->userHeader[3], 4);
+			//  Copy only the words stored; the others keep their initial values
+			float *userHeaderFloats[4] = { &gridStruct->_cellSize, &gridStruct->_xCoordOfGridCellZero,
+				&gridStruct->_yCoordOfGridCellZero, &gridStruct->_nullValue };
+			for (int i = 0; (i < 4) && (i < ztransfer->userHeaderNumber); i++) {
+				memcpy(userHeaderFloats[i], &ztransfer->userHeader[i], 4);
+			}
 		}
 
 		if (gridStruct->_storageDataType == GRID_FLOAT) {
